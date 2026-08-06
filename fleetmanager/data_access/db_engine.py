@@ -86,17 +86,24 @@ def engine_creator(
 
 def create_defaults(engine_: Engine) -> None:
     """
-    Function to load in the defaults defined in dbschema. Idempotent - rows that
-    are already there are left alone, so new defaults reach existing databases.
+    Function to load in the defaults defined in dbschema. Idempotent - rows that are
+    already there are left alone, so new defaults reach existing databases. Types are
+    matched on id since cars references them; settings are matched on name.
     """
     defaults = (
-        (VehicleTypes, get_default_vehicle_types()),
-        (LeasingTypes, get_default_leasing_types()),
-        (FuelTypes, get_default_fuel_types()),
-        (SimulationSettings, get_default_simulation_settings()),
+        (VehicleTypes, "id", get_default_vehicle_types()),
+        (LeasingTypes, "id", get_default_leasing_types()),
+        (FuelTypes, "id", get_default_fuel_types()),
+        (SimulationSettings, "name", get_default_simulation_settings()),
     )
     Session = sessionmaker(bind=engine_)
     with Session.begin() as sess:
-        for model, rows in defaults:
-            existing = set(sess.execute(select(model.id)).scalars().all())
-            sess.add_all([row for row in rows if row.id not in existing])
+        for model, key, rows in defaults:
+            existing = set(sess.execute(select(getattr(model, key))).scalars().all())
+            missing = [row for row in rows if getattr(row, key) not in existing]
+            if model is SimulationSettings:
+                # settings are never looked up by id, and the number a default was
+                # given may already be taken by a vagt_ row the user created
+                for row in missing:
+                    row.id = None
+            sess.add_all(missing)
