@@ -36,16 +36,21 @@ def count_versions(engine):
         return conn.execute(sa.text("SELECT COUNT(*) FROM alembic_version")).scalar()
 
 
-def run_baseline(engine):
-    """Run the chain up to the baseline revision against an existing connection."""
+def run_migrations(engine, revision):
+    """Run the chain up to a revision against an existing connection."""
     config = Config(str(ALEMBIC_INI))
-    baseline = ScriptDirectory.from_config(config).get_bases()[0]
     with engine.begin() as conn:
         config.attributes["connection"] = conn
         try:
-            command.upgrade(config, baseline)
+            command.upgrade(config, revision)
         finally:
             config.attributes.pop("connection", None)
+
+
+def run_baseline(engine):
+    config = Config(str(ALEMBIC_INI))
+    baseline = ScriptDirectory.from_config(config).get_bases()[0]
+    run_migrations(engine, baseline)
 
 
 def test_resolve_returns_known_revision():
@@ -92,10 +97,10 @@ def test_resolve_exits_on_several_stamped_revisions():
     assert count_versions(engine) == 2, "Nothing must be deleted"
 
 
-def test_baseline_builds_the_whole_schema_from_empty():
+def test_the_chain_builds_the_whole_schema_from_empty():
     engine = make_engine()
 
-    run_baseline(engine)
+    run_migrations(engine, "head")
 
     tables = set(sa.inspect(engine).get_table_names())
     assert set(Base.metadata.tables).issubset(tables)
